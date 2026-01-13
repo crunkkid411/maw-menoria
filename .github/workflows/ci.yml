@@ -94,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['18', '20', '22']
+        node: ['20', '22']
 
     steps:
       - uses: actions/checkout@v4
@@ -176,4 +176,4 @@ jobs:
           echo "- Build: ✓"
           echo "- E2E crawl: ✓"
           echo "- CLI commands: ✓"
-          echo "- Node 18/20/22: ✓"
+          echo "- Node 20/22: ✓"
