@@ -128,6 +128,7 @@ jobs:
   test-browser-mode:
     name: Browser Mode
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -152,12 +153,19 @@ jobs:
         run: npx playwright install chromium
 
       - name: Test browser mode
+        timeout-minutes: 5
         run: |
           echo "=== Testing --browser flag ==="
           node dist/bin/maw.js https://memvid.com -o browser-test.mv2 --browser --max-pages 3
           ls -lh browser-test.mv2
-          rm browser-test.mv2
           echo "✅ Browser mode works"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f browser-test.mv2
+          pkill -f chromium || true
+          pkill -f playwright || true
 
   # ============================================================
   # Summary
