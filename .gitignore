@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Memvid files (can be large)
+*.mv2
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test output
+coverage/
+*.tmp
+
+# Environment
+.env
+.env.local
+
+# Package artifacts
+*.tgz
+
+# Playwright
+playwright-report/
+test-results/
