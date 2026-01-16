@@ -14,8 +14,6 @@
 
 ---
 
-30 seconds later you have the entire Stripe documentation in a single 40MB file. Search it. Ask it questions. Works offline. Works forever.
-
 No more bookmarking docs you'll forget about. No more 47 browser tabs. No more "I read this somewhere but can't find it."
 
 ## Install
