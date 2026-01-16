@@ -126,8 +126,8 @@ export async function ingestToMv2(
   let skippedDupes = 0;
   let stoppedAtLimit = false;
   let estimatedFileSize = 0;
-  // Batch size for ingestion (default 10)
-  const batchSize = options.batchSize || 10;
+  // Batch size for ingestion (default 3 - larger batches can cause SDK timeouts)
+  const batchSize = options.batchSize || 3;
   const batch: Array<{ title: string; label: string; text: string; metadata: Record<string, any> }> = [];
 
   // Size limit (default 40MB to stay safely under 50MB free tier with buffer)

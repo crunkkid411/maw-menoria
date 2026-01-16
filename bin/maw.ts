@@ -10,7 +10,7 @@ import { maw, find, ask, list, preview, exportDocs } from '../src/index.js';
 import { setLogMode } from '../src/utils/logger.js';
 import * as ui from '../src/utils/ui.js';
 
-const VERSION = '1.0.4';
+const VERSION = '1.0.5';
 
 // Global error handlers to prevent crashes
 process.on('uncaughtException', (err) => {
