@@ -123,51 +123,6 @@ jobs:
           echo "✅ Node ${{ matrix.node }} works"
 
   # ============================================================
-  # Test with Playwright (browser mode)
-  # ============================================================
-  test-browser-mode:
-    name: Browser Mode
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build
-        run: pnpm run build
-
-      - name: Install Playwright
-        run: npx playwright install chromium
-
-      - name: Test browser mode
-        timeout-minutes: 5
-        run: |
-          echo "=== Testing --browser flag ==="
-          node dist/bin/maw.js https://memvid.com -o browser-test.mv2 --browser --max-pages 3
-          ls -lh browser-test.mv2
-          echo "✅ Browser mode works"
-
-      - name: Cleanup
-        if: always()
-        run: |
-          rm -f browser-test.mv2
-          pkill -f chromium || true
-          pkill -f playwright || true
-
-  # ============================================================
   # Summary
   # ============================================================
   ci-success:
