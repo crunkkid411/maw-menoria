@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/memvid/maw/main/s_maw.svg" alt="maw" width="400">
+<img width="400" alt="maw" src="https://github.com/user-attachments/assets/f6068458-707f-438e-88b2-a8c6982269ef" />
 
 **Crawl any site. Search it forever.**
 
