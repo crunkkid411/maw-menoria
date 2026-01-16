@@ -107,8 +107,8 @@ export async function ingestToMv2(
   let skippedDupes = 0;
   let stoppedAtLimit = false;
   let estimatedFileSize = 0;
-  // Smaller batch size to work around SDK putMany hang at ~30 docs
-  const batchSize = options.batchSize || 3;
+  // Batch size for ingestion (default 10)
+  const batchSize = options.batchSize || 10;
   const batch: Array<{ title: string; label: string; text: string; metadata: Record<string, any> }> = [];
 
   // Size limit (default 40MB to stay safely under 50MB free tier with buffer)
@@ -161,15 +161,18 @@ export async function ingestToMv2(
     totalBytes += result.extracted.byteSize;
     estimatedFileSize += docSize;
 
-    // Show progress
-    log.progress(pages, pages, result.extracted.title.slice(0, 40));
+    // Show progress (in-place update)
+    log.progressUpdate(pages, result.extracted.title.slice(0, 40));
 
     // Flush batch
     if (batch.length >= batchSize) {
       try {
-        if (options.enableEmbedding) {
-          log.status(`Embedding batch ${Math.ceil(pages / batchSize)} (${options.embeddingModel || 'bge-small'})...`);
-        }
+        // Show saving status
+        const savingLabel = options.enableEmbedding
+          ? `Saving ${batch.length} pages + embedding...`
+          : `Saving ${batch.length} pages...`;
+        log.progressUpdate(pages, savingLabel);
+
         await mem.putMany(batch, options.enableEmbedding ? {
           enableEmbedding: true,
           embeddingModel: options.embeddingModel || 'openai',
@@ -198,9 +201,12 @@ export async function ingestToMv2(
   // Flush remaining (with error handling)
   if (batch.length > 0 && !stoppedAtLimit) {
     try {
-      if (options.enableEmbedding) {
-        log.status(`Embedding final batch (${options.embeddingModel || 'bge-small'})...`);
-      }
+      // Show saving status for final batch
+      const savingLabel = options.enableEmbedding
+        ? `Saving final ${batch.length} pages + embedding...`
+        : `Saving final ${batch.length} pages...`;
+      log.progressUpdate(pages, savingLabel);
+
       await mem.putMany(batch, options.enableEmbedding ? {
         enableEmbedding: true,
         embeddingModel: options.embeddingModel || 'openai',
@@ -213,6 +219,9 @@ export async function ingestToMv2(
       }
     }
   }
+
+  // End progress display
+  log.progressEnd();
 
   const duration = Date.now() - startTime;
 
@@ -303,8 +312,8 @@ export async function ingestGitToMv2(
   let totalBytes = 0;
   let stoppedAtLimit = false;
   let estimatedFileSize = 0;
-  // Smaller batch size to work around SDK putMany hang
-  const batchSize = 3;
+  // Batch size for ingestion (default 10)
+  const batchSize = 10;
   const batch: Array<{ title: string; label: string; text: string; metadata: Record<string, any> }> = [];
 
   // Size limit (default 40MB to stay safely under 50MB free tier)
@@ -368,15 +377,18 @@ export async function ingestGitToMv2(
     totalBytes += file.size;
     estimatedFileSize += docSize;
 
-    // Show progress
-    log.progress(fileCount, fileCount, file.path.slice(-40));
+    // Show progress (in-place update)
+    log.progressUpdate(fileCount, file.path.slice(-40));
 
     // Flush batch
     if (batch.length >= batchSize) {
       try {
-        if (options.enableEmbedding) {
-          log.status(`Embedding ${fileCount} files (${options.embeddingModel || 'bge-small'})...`);
-        }
+        // Show saving status
+        const savingLabel = options.enableEmbedding
+          ? `Saving ${batch.length} files + embedding...`
+          : `Saving ${batch.length} files...`;
+        log.progressUpdate(fileCount, savingLabel);
+
         await mem.putMany(batch, options.enableEmbedding ? {
           enableEmbedding: true,
           embeddingModel: options.embeddingModel || 'openai',
@@ -406,9 +418,12 @@ export async function ingestGitToMv2(
   // Flush remaining (with error handling)
   if (batch.length > 0 && !stoppedAtLimit) {
     try {
-      if (options.enableEmbedding) {
-        log.status(`Embedding final ${batch.length} files (${options.embeddingModel || 'bge-small'})...`);
-      }
+      // Show saving status for final batch
+      const savingLabel = options.enableEmbedding
+        ? `Saving final ${batch.length} files + embedding...`
+        : `Saving final ${batch.length} files...`;
+      log.progressUpdate(fileCount, savingLabel);
+
       await mem.putMany(batch, options.enableEmbedding ? {
         enableEmbedding: true,
         embeddingModel: options.embeddingModel || 'openai',
@@ -421,6 +436,9 @@ export async function ingestGitToMv2(
       }
     }
   }
+
+  // End progress display
+  log.progressEnd();
 
   const duration = Date.now() - startTime;
 
@@ -455,7 +473,7 @@ export async function openMv2(path: string) {
 
 /**
  * Search in an MV2 file
- * Uses semantic search when OPENAI_API_KEY is set
+ * Uses semantic search when OPENAI_API_KEY is set, with fallback to lexical
  */
 export async function searchMv2(
   path: string,
@@ -465,14 +483,27 @@ export async function searchMv2(
   const mem = await openMv2(path);
 
   // Determine search mode: use semantic if we have an API key for query embeddings
-  const queryEmbeddingModel = options.embeddingModel || (process.env.OPENAI_API_KEY ? 'openai' : undefined);
+  // Use text-embedding-3-small (1536 dims) to match what maw uses during ingestion
+  const queryEmbeddingModel = options.embeddingModel || (process.env.OPENAI_API_KEY ? 'openai-small' : undefined);
   const mode = queryEmbeddingModel ? 'auto' : 'lex';
 
-  return mem.find(query, {
-    k: options.k || 10,
-    mode,
-    queryEmbeddingModel,
-  });
+  try {
+    return await mem.find(query, {
+      k: options.k || 10,
+      mode,
+      queryEmbeddingModel,
+    });
+  } catch (err: any) {
+    // If vector search fails (dimension mismatch, etc.), fall back to lexical
+    if (err.message?.includes('dimension') || err.message?.includes('embedding')) {
+      log.warn('  Vector search unavailable, using lexical search');
+      return mem.find(query, {
+        k: options.k || 10,
+        mode: 'lex',
+      });
+    }
+    throw err;
+  }
 }
 
 /**
@@ -504,17 +535,33 @@ export async function askMv2(
   const effectiveK = options.k || (isOverview ? 15 : 8);
 
   // Determine search mode: use semantic/auto if we have an API key for query embeddings
-  const queryEmbeddingModel = options.embeddingModel || (process.env.OPENAI_API_KEY ? 'openai' : undefined);
+  // Use text-embedding-3-small (1536 dims) to match what maw uses during ingestion
+  const queryEmbeddingModel = options.embeddingModel || (process.env.OPENAI_API_KEY ? 'openai-small' : undefined);
   const mode = queryEmbeddingModel ? 'auto' : 'lex'; // auto = hybrid (semantic + lexical), lex = BM25 only
 
-  return mem.ask(question, {
-    model: options.model || 'gpt-4o-mini',
-    modelApiKey: options.apiKey || process.env.OPENAI_API_KEY,
-    k: effectiveK,
-    llmContextChars: isOverview ? 15000 : 8000, // More context for overview questions
-    mode,
-    queryEmbeddingModel,
-  });
+  try {
+    return await mem.ask(question, {
+      model: options.model || 'gpt-4o-mini',
+      modelApiKey: options.apiKey || process.env.OPENAI_API_KEY,
+      k: effectiveK,
+      llmContextChars: isOverview ? 15000 : 8000, // More context for overview questions
+      mode,
+      queryEmbeddingModel,
+    });
+  } catch (err: any) {
+    // If vector search fails (dimension mismatch, etc.), fall back to lexical
+    if (err.message?.includes('dimension') || err.message?.includes('embedding')) {
+      log.warn('  Vector search unavailable, using lexical search');
+      return mem.ask(question, {
+        model: options.model || 'gpt-4o-mini',
+        modelApiKey: options.apiKey || process.env.OPENAI_API_KEY,
+        k: effectiveK,
+        llmContextChars: isOverview ? 15000 : 8000,
+        mode: 'lex',
+      });
+    }
+    throw err;
+  }
 }
 
 /**

@@ -249,7 +249,7 @@ export function previewResults(result: {
 /**
  * Search results display
  */
-export function searchResults(hits: Array<{ title: string; metadata?: { url?: string }; score?: number }>): string {
+export function searchResults(hits: Array<{ title: string; metadata?: { url?: string }; score?: number; preview?: string; chunk?: string; snippet?: string }>): string {
   const lines: string[] = [''];
 
   if (hits.length === 0) {
@@ -280,6 +280,19 @@ export function searchResults(hits: Array<{ title: string; metadata?: { url?: st
 
     // Show full title (no truncation)
     lines.push(`  ${theme.muted(`${i + 1}.`)} ${scoreDisplay}${theme.white(hit.title)}`);
+
+    // Show chunk/preview snippet if available
+    const snippet = hit.snippet || hit.chunk || hit.preview;
+    if (snippet) {
+      // Clean up and truncate snippet
+      const cleanSnippet = snippet
+        .replace(/\n+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      const displaySnippet = cleanSnippet.length < snippet.length ? cleanSnippet + '...' : cleanSnippet;
+      lines.push(`     ${theme.dim(displaySnippet)}`);
+    }
 
     if (hit.metadata?.url && !hit.metadata.url.startsWith('mv2://')) {
       lines.push(`     ${theme.muted(hit.metadata.url)}`);
@@ -409,6 +422,18 @@ export function summaryTable(rows: Array<{ label: string; value: string | number
     lines.push(`  ${theme.muted(row.label.padEnd(20))} ${colorFn.bold(value)}`);
   }
 
+  return lines.join('\n');
+}
+
+/**
+ * Usage hints after successful crawl
+ */
+export function usageHints(filename: string): string {
+  const lines: string[] = [''];
+  lines.push(`  ${theme.muted('Try:')}`);
+  lines.push(`  ${theme.dim('$')} ${theme.info(`maw find ${filename} "your query"`)}`);
+  lines.push(`  ${theme.dim('$')} ${theme.info(`maw ask ${filename} "your question"`)}`);
+  lines.push('');
   return lines.join('\n');
 }
 

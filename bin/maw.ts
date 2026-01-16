@@ -12,6 +12,67 @@ import * as ui from '../src/utils/ui.js';
 
 const VERSION = '1.0.0';
 
+// Global error handlers to prevent crashes
+process.on('uncaughtException', (err) => {
+  console.error(ui.errorMessage(`Unexpected error: ${err.message}`));
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  const message = reason?.message || String(reason);
+  console.error(ui.errorMessage(`Unhandled error: ${message}`));
+  process.exit(1);
+});
+
+/**
+ * Check if .mv2 file exists and is readable
+ */
+function checkFileExists(file: string): void {
+  if (!existsSync(file)) {
+    console.error(ui.errorMessage(`File not found: ${file}`));
+    process.exit(1);
+  }
+  if (!file.endsWith('.mv2')) {
+    console.error(ui.errorMessage(`Invalid file type: ${file} (expected .mv2)`));
+    process.exit(1);
+  }
+}
+
+/**
+ * Wrap async action with better error handling
+ */
+function safeAction<T extends any[]>(
+  fn: (...args: T) => Promise<void>
+): (...args: T) => Promise<void> {
+  return async (...args: T) => {
+    try {
+      await fn(...args);
+    } catch (error: any) {
+      // Provide helpful error messages for common issues
+      let message = error.message || 'Unknown error';
+
+      if (message.includes('dimension mismatch')) {
+        message = 'Vector dimension mismatch. The file was created with a different embedding model. Try: maw find <file> <query> (uses lexical search)';
+      } else if (message.includes('OPENAI_API_KEY')) {
+        message = 'OpenAI API key required. Set OPENAI_API_KEY environment variable or use --api-key flag';
+      } else if (message.includes('ENOENT')) {
+        message = `File not found: ${message.split("'")[1] || 'unknown'}`;
+      } else if (message.includes('EACCES')) {
+        message = 'Permission denied. Check file permissions.';
+      } else if (message.includes('ENOSPC')) {
+        message = 'Disk full. Free up space and try again.';
+      } else if (message.includes('fetch failed') || message.includes('ETIMEDOUT')) {
+        message = 'Network error. Check your internet connection.';
+      } else if (message.includes('rate limit') || message.includes('429')) {
+        message = 'Rate limited. Wait a moment and try again.';
+      }
+
+      console.error(ui.errorMessage(message));
+      process.exit(1);
+    }
+  };
+}
+
 const program = new Command();
 
 program
@@ -154,22 +215,18 @@ program
   .description('Search in an .mv2 file')
   .option('-k, --top <n>', 'Number of results (default: 10)', '10')
   .option('--json', 'Output as JSON')
-  .action(async (file, query, options) => {
-    try {
-      const results = await find(file, query, { k: parseInt(options.top, 10) });
+  .action(safeAction(async (file, query, options) => {
+    checkFileExists(file);
+    const results = await find(file, query, { k: parseInt(options.top, 10) });
 
-      if (options.json) {
-        console.log(JSON.stringify(results, null, 2));
-        return;
-      }
-
-      console.log();
-      console.log(ui.searchResults(results.hits || []));
-    } catch (error: any) {
-      console.error(ui.errorMessage(error.message));
-      process.exit(1);
+    if (options.json) {
+      console.log(JSON.stringify(results, null, 2));
+      return;
     }
-  });
+
+    console.log();
+    console.log(ui.searchResults(results.hits || []));
+  }));
 
 // ask command: maw ask <file> <question>
 program
@@ -179,25 +236,29 @@ program
   .option('--api-key <key>', 'API key for the model')
   .option('-k, --context <n>', 'Number of context chunks to retrieve (auto: 15 for overview questions, 8 otherwise)')
   .option('--json', 'Output as JSON')
-  .action(async (file, question, options) => {
-    try {
-      const result = await ask(file, question, {
-        model: options.model,
-        apiKey: options.apiKey || process.env.OPENAI_API_KEY,
-        k: options.context ? parseInt(options.context, 10) : undefined, // Let ingestor decide default
-      });
+  .action(safeAction(async (file, question, options) => {
+    checkFileExists(file);
 
-      if (options.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return;
-      }
-
-      console.log(ui.askResult(result.answer, result.sources));
-    } catch (error: any) {
-      console.error(ui.errorMessage(error.message));
+    // Check for API key early
+    const apiKey = options.apiKey || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.error(ui.errorMessage('OpenAI API key required. Set OPENAI_API_KEY or use --api-key'));
       process.exit(1);
     }
-  });
+
+    const result = await ask(file, question, {
+      model: options.model,
+      apiKey,
+      k: options.context ? parseInt(options.context, 10) : undefined,
+    });
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(ui.askResult(result.answer, result.sources));
+  }));
 
 // list command: maw list <file>
 program
@@ -205,30 +266,26 @@ program
   .description('List documents in an .mv2 file')
   .option('-l, --limit <n>', 'Number of documents to show (default: 20)', '20')
   .option('--json', 'Output as JSON')
-  .action(async (file, options) => {
-    try {
-      const results = await list(file, { limit: parseInt(options.limit, 10) });
+  .action(safeAction(async (file, options) => {
+    checkFileExists(file);
+    const results = await list(file, { limit: parseInt(options.limit, 10) });
 
-      if (options.json) {
-        console.log(JSON.stringify(results, null, 2));
-        return;
-      }
-
-      const items = results.hits || results.frames || results;
-      if (Array.isArray(items) && items.length > 0) {
-        console.log(ui.listDocuments(items.map((item: any) => ({
-          title: item.title || item.preview?.slice(0, 60) || `Frame ${item.frame_id}`,
-          url: item.metadata?.url || item.uri,
-          preview: item.preview,
-        }))));
-      } else {
-        console.log(`\n  ${ui.theme.muted('No documents found.')}\n`);
-      }
-    } catch (error: any) {
-      console.error(ui.errorMessage(error.message));
-      process.exit(1);
+    if (options.json) {
+      console.log(JSON.stringify(results, null, 2));
+      return;
     }
-  });
+
+    const items = results.hits || results.frames || results;
+    if (Array.isArray(items) && items.length > 0) {
+      console.log(ui.listDocuments(items.map((item: any) => ({
+        title: item.title || item.preview?.slice(0, 60) || `Frame ${item.frame_id}`,
+        url: item.metadata?.url || item.uri,
+        preview: item.preview,
+      }))));
+    } else {
+      console.log(`\n  ${ui.theme.muted('No documents found.')}\n`);
+    }
+  }));
 
 // preview command: maw preview <url> (or np)
 program
@@ -237,21 +294,24 @@ program
   .description('Preview available pages on a site (sitemap discovery)')
   .option('-l, --limit <n>', 'Number of pages to show', '20')
   .option('--json', 'Output as JSON')
-  .action(async (url, options) => {
+  .action(safeAction(async (url, options) => {
+    // Basic URL validation
     try {
-      const result = await preview(url, { limit: parseInt(options.limit, 10) });
-
-      if (options.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return;
-      }
-
-      console.log(ui.previewResults(result));
-    } catch (error: any) {
-      console.error(ui.errorMessage(error.message));
+      new URL(url.startsWith('http') ? url : `https://${url}`);
+    } catch {
+      console.error(ui.errorMessage(`Invalid URL: ${url}`));
       process.exit(1);
     }
-  });
+
+    const result = await preview(url, { limit: parseInt(options.limit, 10) });
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(ui.previewResults(result));
+  }));
 
 // export command: maw export <file>
 program
@@ -259,46 +319,43 @@ program
   .description('Export .mv2 file to other formats')
   .option('-f, --format <format>', 'Output format: json, markdown, csv', 'json')
   .option('--out <file>', 'Output file (default: stdout)')
-  .action(async (file, options) => {
-    try {
-      // Get full content for all documents
-      const docs = await exportDocs(file, { limit: 10000 });
+  .action(safeAction(async (file, options) => {
+    checkFileExists(file);
 
-      let output: string;
+    // Get full content for all documents
+    const docs = await exportDocs(file, { limit: 10000 });
 
-      switch (options.format) {
-        case 'markdown':
-          output = docs.map((doc) => {
-            return `# ${doc.title}\n\n${doc.content}\n\n---\n`;
-          }).join('\n');
-          break;
+    let output: string;
 
-        case 'csv':
-          const headers = ['title', 'uri'];
-          const rows = docs.map((doc) => {
-            return [
-              `"${(doc.title || '').replace(/"/g, '""')}"`,
-              `"${(doc.uri || '').replace(/"/g, '""')}"`,
-            ].join(',');
-          });
-          output = [headers.join(','), ...rows].join('\n');
-          break;
+    switch (options.format) {
+      case 'markdown':
+        output = docs.map((doc) => {
+          return `# ${doc.title}\n\n${doc.content}\n\n---\n`;
+        }).join('\n');
+        break;
 
-        default:
-          output = JSON.stringify(docs, null, 2);
-      }
+      case 'csv':
+        const headers = ['title', 'uri'];
+        const rows = docs.map((doc) => {
+          return [
+            `"${(doc.title || '').replace(/"/g, '""')}"`,
+            `"${(doc.uri || '').replace(/"/g, '""')}"`,
+          ].join(',');
+        });
+        output = [headers.join(','), ...rows].join('\n');
+        break;
 
-      if (options.out) {
-        const { writeFileSync } = await import('fs');
-        writeFileSync(options.out, output);
-        console.log(ui.theme.success(`\n  Exported ${docs.length} documents to ${options.out}\n`));
-      } else {
-        console.log(output);
-      }
-    } catch (error: any) {
-      console.error(ui.errorMessage(error.message));
-      process.exit(1);
+      default:
+        output = JSON.stringify(docs, null, 2);
     }
-  });
+
+    if (options.out) {
+      const { writeFileSync } = await import('fs');
+      writeFileSync(options.out, output);
+      console.log(ui.theme.success(`\n  Exported ${docs.length} documents to ${options.out}\n`));
+    } else {
+      console.log(output);
+    }
+  }));
 
 program.parse();
