@@ -9,6 +9,25 @@ import { createLogger } from '../utils/logger.js';
 
 const log = createLogger();
 
+// Timeout wrapper to prevent SDK calls from hanging forever
+function withTimeout<T>(promise: Promise<T>, ms: number, operation: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${ms / 1000}s`));
+    }, ms);
+
+    promise
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
 // Dynamic import for @memvid/sdk
 let sdkModule: any = null;
 
@@ -173,10 +192,14 @@ export async function ingestToMv2(
           : `Saving ${batch.length} pages...`;
         log.progressUpdate(pages, savingLabel);
 
-        await mem.putMany(batch, options.enableEmbedding ? {
-          enableEmbedding: true,
-          embeddingModel: options.embeddingModel || 'openai',
-        } : undefined);
+        await withTimeout(
+          mem.putMany(batch, options.enableEmbedding ? {
+            enableEmbedding: true,
+            embeddingModel: options.embeddingModel || 'openai',
+          } : undefined),
+          60000, // 60 second timeout per batch
+          'Saving pages'
+        );
         batch.length = 0;
 
         // Check actual file size after flush (only if no API key)
@@ -193,6 +216,10 @@ export async function ingestToMv2(
           stoppedAtLimit = true;
           break;
         }
+        if (err.message?.includes('timed out')) {
+          log.warn(`  Save operation timed out. The SDK may be having issues.`);
+          throw err;
+        }
         throw err;
       }
     }
@@ -207,13 +234,20 @@ export async function ingestToMv2(
         : `Saving final ${batch.length} pages...`;
       log.progressUpdate(pages, savingLabel);
 
-      await mem.putMany(batch, options.enableEmbedding ? {
-        enableEmbedding: true,
-        embeddingModel: options.embeddingModel || 'openai',
-      } : undefined);
+      await withTimeout(
+        mem.putMany(batch, options.enableEmbedding ? {
+          enableEmbedding: true,
+          embeddingModel: options.embeddingModel || 'openai',
+        } : undefined),
+        60000, // 60 second timeout
+        'Saving final pages'
+      );
     } catch (err: any) {
       if (err.message?.includes('exceeds') && err.message?.includes('limit')) {
         stoppedAtLimit = true;
+      } else if (err.message?.includes('timed out')) {
+        log.warn(`  Save operation timed out. The SDK may be having issues.`);
+        throw err;
       } else {
         throw err;
       }
@@ -389,10 +423,14 @@ export async function ingestGitToMv2(
           : `Saving ${batch.length} files...`;
         log.progressUpdate(fileCount, savingLabel);
 
-        await mem.putMany(batch, options.enableEmbedding ? {
-          enableEmbedding: true,
-          embeddingModel: options.embeddingModel || 'openai',
-        } : undefined);
+        await withTimeout(
+          mem.putMany(batch, options.enableEmbedding ? {
+            enableEmbedding: true,
+            embeddingModel: options.embeddingModel || 'openai',
+          } : undefined),
+          60000, // 60 second timeout per batch
+          'Saving files'
+        );
         batch.length = 0;
 
         // Check actual file size after flush (only if no API key)
@@ -410,6 +448,10 @@ export async function ingestGitToMv2(
           stoppedAtLimit = true;
           break;
         }
+        if (err.message?.includes('timed out')) {
+          log.warn(`  Save operation timed out. The SDK may be having issues.`);
+          throw err;
+        }
         throw err;
       }
     }
@@ -424,13 +466,20 @@ export async function ingestGitToMv2(
         : `Saving final ${batch.length} files...`;
       log.progressUpdate(fileCount, savingLabel);
 
-      await mem.putMany(batch, options.enableEmbedding ? {
-        enableEmbedding: true,
-        embeddingModel: options.embeddingModel || 'openai',
-      } : undefined);
+      await withTimeout(
+        mem.putMany(batch, options.enableEmbedding ? {
+          enableEmbedding: true,
+          embeddingModel: options.embeddingModel || 'openai',
+        } : undefined),
+        60000, // 60 second timeout
+        'Saving final files'
+      );
     } catch (err: any) {
       if (err.message?.includes('exceeds') && err.message?.includes('limit')) {
         stoppedAtLimit = true;
+      } else if (err.message?.includes('timed out')) {
+        log.warn(`  Save operation timed out. The SDK may be having issues.`);
+        throw err;
       } else {
         throw err;
       }

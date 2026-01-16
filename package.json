@@ -1,6 +1,6 @@
 {
   "name": "@memvid/maw",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Crawl any site. Search it forever.",
   "type": "module",
   "main": "dist/index.js",
