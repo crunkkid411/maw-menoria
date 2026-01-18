@@ -213,17 +213,23 @@ export class RobotsParser {
   }
 
   private pathMatches(path: string, pattern: string): boolean {
-    // Simple pattern matching (supports * and $ wildcards)
+    // Robots.txt pattern matching (supports * and $ wildcards)
+    // Per Google spec: * matches any sequence, $ means end-of-URL
     if (pattern === '/') return true;
 
+    // Check if pattern ends with $ (exact match anchor)
+    const hasEndAnchor = pattern.endsWith('$');
+    const patternToConvert = hasEndAnchor ? pattern.slice(0, -1) : pattern;
+
     // Convert pattern to regex
-    let regex = pattern
+    // Escape special regex chars EXCEPT * (we handle it separately)
+    let regex = patternToConvert
       .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape special chars
       .replace(/\*/g, '.*'); // * becomes .*
 
-    // $ at end means exact match
-    if (regex.endsWith('\\$')) {
-      regex = regex.slice(0, -2) + '$';
+    // Add end anchor if pattern ended with $
+    if (hasEndAnchor) {
+      regex += '$';
     }
 
     try {
