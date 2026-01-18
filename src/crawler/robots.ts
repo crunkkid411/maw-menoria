@@ -113,8 +113,10 @@ export class RobotsParser {
     this.sitemaps.set(host, sitemaps);
   }
 
+
   /**
    * Check if a URL is allowed by robots.txt
+   * Follows Google's spec: longest matching pattern wins
    */
   isAllowed(url: string, userAgent = '*'): boolean {
     try {
@@ -136,27 +138,47 @@ export class RobotsParser {
         return true; // No matching rules = allow
       }
 
-      // Check rules (more specific rules take precedence)
+      // Collect ALL matching patterns from all rules
+      const matches: { pattern: string; isAllow: boolean }[] = [];
+
       for (const rule of matchingRules) {
-        // Check disallow first
+        // Collect matching allow patterns
+        for (const allow of rule.allow) {
+          if (this.pathMatches(path, allow)) {
+            matches.push({ pattern: allow, isAllow: true });
+          }
+        }
+        // Collect matching disallow patterns
         for (const disallow of rule.disallow) {
           if (this.pathMatches(path, disallow)) {
-            // Check if there's a more specific allow
-            for (const allow of rule.allow) {
-              if (this.pathMatches(path, allow) && allow.length > disallow.length) {
-                return true;
-              }
-            }
-            return false;
+            matches.push({ pattern: disallow, isAllow: false });
           }
         }
       }
 
-      return true;
+      // No matching patterns = allow
+      if (matches.length === 0) {
+        return true;
+      }
+
+      // Find the longest matching pattern (Google's spec: most specific wins)
+      // If tied, allow wins (per spec: "allow" takes precedence on equal length)
+      const longest = matches.reduce((best, current) => {
+        if (current.pattern.length > best.pattern.length) {
+          return current;
+        }
+        if (current.pattern.length === best.pattern.length && current.isAllow) {
+          return current; // Allow wins on tie
+        }
+        return best;
+      });
+
+      return longest.isAllow;
     } catch {
       return true;
     }
   }
+
 
   /**
    * Get crawl delay for a host
