@@ -1,0 +1,1 @@
+export * from './mnemoria.js';

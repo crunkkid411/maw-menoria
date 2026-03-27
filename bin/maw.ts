@@ -25,15 +25,12 @@ process.on('unhandledRejection', (reason: any) => {
 });
 
 /**
- * Check if .mv2 file exists and is readable
+ * Check if .maw directory or .mv2 file exists and is readable
  */
 function checkFileExists(file: string): void {
-  if (!existsSync(file)) {
+  const mawDir = file.endsWith('.maw') ? file : file.replace(/\.mv2$/, '.maw');
+  if (!existsSync(file) && !existsSync(mawDir)) {
     console.error(ui.errorMessage(`File not found: ${file}`));
-    process.exit(1);
-  }
-  if (!file.endsWith('.mv2')) {
-    console.error(ui.errorMessage(`Invalid file type: ${file} (expected .mv2)`));
     process.exit(1);
   }
 }
@@ -80,10 +77,10 @@ program
   .description('Feed the maw. It never forgets.')
   .version(VERSION);
 
-// Main command: maw <urls...> [file.mv2]
+// Main command: maw <urls...> [file.maw]
 program
-  .argument('[urls...]', 'URLs/repos to consume, optionally followed by target.mv2 to append')
-  .option('-o, --output <file>', 'Output .mv2 file', 'maw.mv2')
+  .argument('[urls...]', 'URLs/repos to consume, optionally followed by target.maw to append')
+  .option('-o, --output <file>', 'Output .maw directory', 'maw.maw')
   .option('-d, --depth <n>', 'Crawl depth (auto: 0 for pages, 2 for domains)')
   .option('-c, --concurrency <n>', 'Concurrent requests', '10')
   .option('-m, --max-pages <n>', 'Maximum pages to crawl (default: 150)')
@@ -111,18 +108,18 @@ program
 
     setLogMode(options.quiet, options.verbose);
 
-    // Check if any argument is an .mv2 file (use as output target for appending)
-    // e.g., `maw https://example.com knowledge.mv2` or `maw knowledge.mv2 https://example.com`
-    const mv2Files = urls.filter((u: string) => u.endsWith('.mv2'));
-    const sources = urls.filter((u: string) => !u.endsWith('.mv2'));
+    // Check if any argument is an .maw directory (use as output target for appending)
+    // e.g., `maw https://example.com knowledge.maw` or `maw knowledge.maw https://example.com`
+    const mawFiles = urls.filter((u: string) => u.endsWith('.maw'));
+    const sources = urls.filter((u: string) => !u.endsWith('.maw'));
 
-    // Determine output file: explicit -o flag > .mv2 in args > default
+    // Determine output file: explicit -o flag > .maw in args > default
     let outputFile = options.output;
-    if (mv2Files.length > 0 && options.output === 'maw.mv2') {
-      // Use the .mv2 file from args if no explicit -o was given
-      outputFile = mv2Files[0];
-      if (mv2Files.length > 1) {
-        console.error(ui.errorMessage('Only one .mv2 file can be specified as target'));
+    if (mawFiles.length > 0 && options.output === 'maw.maw') {
+      // Use the .maw file from args if no explicit -o was given
+      outputFile = mawFiles[0];
+      if (mawFiles.length > 1) {
+        console.error(ui.errorMessage('Only one .maw directory can be specified as target'));
         process.exit(1);
       }
     }
@@ -212,7 +209,7 @@ program
 // find command: maw find <file> <query>
 program
   .command('find <file> <query>')
-  .description('Search in an .mv2 file')
+  .description('Search in a .maw memory store')
   .option('-k, --top <n>', 'Number of results (default: 10)', '10')
   .option('--json', 'Output as JSON')
   .action(safeAction(async (file, query, options) => {
@@ -231,24 +228,20 @@ program
 // ask command: maw ask <file> <question>
 program
   .command('ask <file> <question>')
-  .description('Ask a question using an .mv2 file')
-  .option('--model <model>', 'LLM model to use (default: gpt-4o-mini)', 'gpt-4o-mini')
-  .option('--api-key <key>', 'API key for the model')
+  .description('Ask a question using a .maw memory store')
+  .option('--model <model>', 'LLM model to use (default: llama3.2 for Ollama, gpt-4o-mini for OpenAI)', 'llama3.2')
+  .option('--api-key <key>', 'API key for OpenAI (optional if using Ollama)')
   .option('-k, --context <n>', 'Number of context chunks to retrieve (auto: 15 for overview questions, 8 otherwise)')
   .option('--json', 'Output as JSON')
   .action(safeAction(async (file, question, options) => {
     checkFileExists(file);
 
-    // Check for API key early
+    // API key is optional - we can use Ollama for local LLM
     const apiKey = options.apiKey || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      console.error(ui.errorMessage('OpenAI API key required. Set OPENAI_API_KEY or use --api-key'));
-      process.exit(1);
-    }
 
     const result = await ask(file, question, {
       model: options.model,
-      apiKey,
+      apiKey: apiKey || undefined,
       k: options.context ? parseInt(options.context, 10) : undefined,
     });
 
@@ -263,7 +256,7 @@ program
 // list command: maw list <file>
 program
   .command('list <file>')
-  .description('List documents in an .mv2 file')
+  .description('List documents in a .maw memory store')
   .option('-l, --limit <n>', 'Number of documents to show (default: 20)', '20')
   .option('--json', 'Output as JSON')
   .action(safeAction(async (file, options) => {
@@ -275,7 +268,7 @@ program
       return;
     }
 
-    const items = results.hits || results.frames || results;
+    const items = (results as any).hits || (results as any).frames || results;
     if (Array.isArray(items) && items.length > 0) {
       console.log(ui.listDocuments(items.map((item: any) => ({
         title: item.title || item.preview?.slice(0, 60) || `Frame ${item.frame_id}`,
@@ -316,7 +309,7 @@ program
 // export command: maw export <file>
 program
   .command('export <file>')
-  .description('Export .mv2 file to other formats')
+  .description('Export .maw memory store to other formats')
   .option('-f, --format <format>', 'Output format: json, markdown, csv', 'json')
   .option('--out <file>', 'Output file (default: stdout)')
   .action(safeAction(async (file, options) => {

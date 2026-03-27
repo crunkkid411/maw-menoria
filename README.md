@@ -4,10 +4,6 @@
 
 **Crawl any site. Search it forever.**
 
-[![npm](https://img.shields.io/npm/v/@memvid/maw)](https://www.npmjs.com/package/@memvid/maw)
-[![downloads](https://img.shields.io/npm/dm/@memvid/maw)](https://www.npmjs.com/package/@memvid/maw)
-[![license](https://img.shields.io/npm/l/@memvid/maw)](LICENSE)
-
 [Install](#install) · [Commands](#commands) · [Examples](#examples) · [FAQ](#faq)
 
 </div>
@@ -24,15 +20,22 @@ npm i -g @memvid/maw
 
 Or just `npx @memvid/maw` if you don't want to install anything.
 
+**Prerequisites:**
+- [Rust](https://rustup.rs/) (for Mnemoria storage)
+- ~130MB for embedding model (downloaded on first use)
+- Optional: [Ollama](https://ollama.com/) for local LLM Q&A
+
 ## The basics
 
 ```bash
-maw https://react.dev              # crawls entire site → maw.mv2
-maw find maw.mv2 "useEffect"       # instant search
-maw ask maw.mv2 "when should I use useCallback vs useMemo?"  # AI answers
+maw https://react.dev              # crawls entire site → maw.maw/
+maw find maw.maw "useEffect"       # instant search
+maw ask maw.maw "when should I use useCallback vs useMemo?"  # AI answers (needs Ollama)
 ```
 
-That last one needs `OPENAI_API_KEY` in your env. The first two work out of the box.
+The first two work out of the box. For AI answers, either:
+- Install [Ollama](https://ollama.com/) for local LLM (recommended), or
+- Set `OPENAI_API_KEY` environment variable for OpenAI
 
 ## What can you crawl?
 
@@ -56,17 +59,17 @@ It figures out the right approach automatically:
 
 **Crawl**
 ```bash
-maw <url>                             # saves to maw.mv2
-maw <url> -o docs.mv2                 # custom output file
-maw <url> docs.mv2                    # same (appends if file exists)
+maw <url>                             # saves to maw.maw/
+maw <url> -o docs.maw/                # custom output directory
+maw <url> docs.maw                    # same (appends if directory exists)
 maw <url> --depth 5 --max-pages 500   # go deeper
 ```
 
 **Search**
 ```bash
-maw find docs.mv2 "authentication"    # keyword search
-maw ask docs.mv2 "how do I do X?"     # AI-powered answers
-maw list docs.mv2                     # see what's in there
+maw find docs.maw "authentication"    # keyword search (hybrid BM25 + semantic)
+maw ask docs.maw "how do I do X?"     # AI-powered answers (needs Ollama)
+maw list docs.maw                     # see what's in there
 ```
 
 **Preview before crawling**
@@ -76,37 +79,21 @@ maw preview stripe.com                # shows sitemap, page count estimate
 
 **Export**
 ```bash
-maw export docs.mv2 -f markdown       # dump everything to markdown
-maw export docs.mv2 -f json           # or json
+maw export docs.maw -f markdown      # dump everything to markdown
+maw export docs.maw -f json          # or json
 ```
 
-## Semantic search
+## How it works
 
-By default you get keyword search (BM25). It's fast and works well for most things.
-
-Want semantic search? Add `--embed`:
-
-```bash
-maw https://kubernetes.io/docs --embed openai
-```
-
-Costs about $0.01 per 1000 pages. Your queries will understand meaning, not just keywords.
-
-## How it handles protected sites
-
-```
-fetch (fast) → playwright (real browser) → rebrowser (stealth)
-```
-
-90% of sites work with a simple fetch. The other 10% get a real browser. If that's blocked too, stealth mode usually gets through.
-
-You don't have to think about this. It just tries each approach until something works.
+- **Storage**: [Mnemoria](https://github.com/one-bit/mnemoria) - open-source, unlimited storage
+- **Search**: Hybrid BM25 + semantic search (built-in embeddings)
+- **Crawling**: fetch → Playwright → rebrowser (stealth)
 
 ## All the flags
 
 | Flag | What it does | Default |
 |------|--------------|---------|
-| `-o, --output <file>` | Output file | `maw.mv2` |
+| `-o, --output <dir>` | Output directory | `maw.maw/` |
 | `-d, --depth <n>` | How deep to crawl | `2` |
 | `-m, --max-pages <n>` | Stop after this many pages | `150` |
 | `-c, --concurrency <n>` | Parallel requests | `10` |
@@ -115,7 +102,6 @@ You don't have to think about this. It just tries each approach until something 
 | `--exclude <regex>` | Skip URLs matching this | - |
 | `--browser` | Force browser mode | - |
 | `--stealth` | Force stealth mode | - |
-| `--embed [model]` | Enable semantic embeddings | - |
 | `--no-robots` | Ignore robots.txt | - |
 | `--no-sitemap` | Don't use sitemap.xml | - |
 
@@ -134,18 +120,13 @@ maw https://paulgraham.com/articles.html
 maw .
 maw https://github.com/your/repo
 
-# combine sources into one file
-maw https://react.dev https://nextjs.org -o frontend.mv2
-
-# big crawl with semantic search
-maw https://kubernetes.io/docs --depth 4 --max-pages 1000 --embed openai
+# combine sources into one memory
+maw https://react.dev https://nextjs.org -o frontend.maw/
 ```
 
 ## Limits
 
-Up to **50MB** works without an API key. That's roughly 500-2000 pages depending on how much text is on each page.
-
-Need more? Get a key at [memvid.com](https://memvid.com).
+**Unlimited!** No API keys required, no size limits. Your only constraint is disk space.
 
 ## FAQ
 
@@ -153,19 +134,32 @@ Need more? Get a key at [memvid.com](https://memvid.com).
 
 Respects robots.txt by default. What you do with `--no-robots` is your business.
 
-**What's an .mv2 file?**
+**What's a .maw directory?**
 
-A [memvid](https://memvid.com) file. Single-file database with search built in. Like SQLite but for documents and memory.
+A local memory store using [Mnemoria](https://github.com/one-bit/mnemoria). Contains:
+- `mnemoria/log.bin` - append-only data
+- `mnemoria/manifest.json` - metadata and checksums
 
 **Programmatic usage?**
 
 ```javascript
 import { maw, find, ask } from '@memvid/maw'
 
-await maw(['https://example.com'], { output: 'site.mv2' })
-const results = await find('site.mv2', 'search term')
-const answer = await ask('site.mv2', 'explain this to me')
+await maw(['https://example.com'], { output: 'site.maw/' })
+const results = await find('site.maw/', 'search term')
+const answer = await ask('site.maw/', 'explain this to me')
 ```
+
+**How does the AI Q&A work?**
+
+For local LLM:
+1. Install [Ollama](https://ollama.com/)
+2. Run `ollama serve` in background
+3. Use `maw ask <memory> "<question>"` - defaults to llama3.2
+
+For OpenAI:
+1. Set `OPENAI_API_KEY` environment variable
+2. Use `--model gpt-4o-mini` flag if needed
 
 **Will I get rate limited?**
 
@@ -177,4 +171,4 @@ Works. Falls back to a real browser automatically when needed.
 
 ---
 
-[MIT License](LICENSE) · Built on [memvid](https://memvid.com)
+[MIT License](LICENSE)
