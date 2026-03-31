@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "_meta": {
+    "description": "MAW Knowledge Base Configuration - Tracks crawled sources and update metadata",
+    "updated_by": "scripts/maw-protocol.py",
+    "schema_version": "1.0"
+  },
+  "knowledge_bases": {}
+}

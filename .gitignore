@@ -7,6 +7,9 @@ dist/
 # Memvid files (can be large)
 *.mv2
 
+# Knowledge bases (generated content)
+knowledge-bases/
+
 # Logs
 *.log
 npm-debug.log*

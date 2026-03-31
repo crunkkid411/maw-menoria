@@ -4,13 +4,36 @@
 
 **Crawl any site. Search it forever.**
 
-[Install](#install) · [Commands](#commands) · [Examples](#examples) · [FAQ](#faq)
+[Install](#install) · [Commands](#commands) · [Examples](#examples) · [FAQ](#faq) · [Agent Protocol](#agent-protocol)
 
 </div>
 
 ---
 
 No more bookmarking docs you'll forget about. No more 47 browser tabs. No more "I read this somewhere but can't find it."
+
+---
+
+## Quickstart
+
+**For AI Agents:** This project includes an **Agent Protocol** for automated knowledge base management.
+
+```bash
+# Add a knowledge base
+python scripts/maw-protocol.py --add handy https://handy.computer/docs/general
+
+# Crawl (auto-checks for updates)
+python scripts/maw-protocol.py --crawl handy
+
+# Check status
+python scripts/maw-protocol.py --status
+```
+
+**For Humans:** Just tell your AI agent *"Load context: handy"* and let it handle the rest.
+
+📖 **[See AGENT-PROTOCOL.md for full documentation](AGENT-PROTOCOL.md)**
+
+---
 
 ## Install
 
@@ -168,6 +191,48 @@ Default is 10 req/sec with backoff. Most sites won't notice. If you're worried, 
 **JS-rendered content?**
 
 Works. Falls back to a real browser automatically when needed.
+
+---
+
+## Agent Protocol
+
+This project includes a **deterministic protocol** for AI agents to manage knowledge bases automatically.
+
+**Key Features:**
+- ✅ **Update-aware:** Only crawls when content changes (ETag/Last-Modified checking)
+- ✅ **Agent-first:** All CLI commands run by the agent, not the user
+- ✅ **No server bloat:** Direct file access, no HTTP layer
+- ✅ **Windows-compatible:** Works with PowerShell/cmd
+
+**Quick Commands:**
+```bash
+# Add a knowledge base
+python scripts/maw-protocol.py --add <name> <url>
+
+# Crawl with update check
+python scripts/maw-protocol.py --crawl <name>
+
+# Force re-crawl
+python scripts/maw-protocol.py --crawl <name> --force
+
+# Check all status
+python scripts/maw-protocol.py --status
+
+# List knowledge bases
+python scripts/maw-protocol.py --list
+```
+
+**Trigger Phrases for Your Agent:**
+- *"Load context: <topic>"* → Agent fetches/searches knowledge base
+- *"Query: <topic> - <question>"* → Agent searches and answers
+- *"Is <topic> up to date?"* → Agent checks for updates
+
+**Requirements:**
+- Python 3.8+
+- `requests` library: `pip install requests`
+- Node.js (for npx/MAW)
+
+📖 **[Full documentation: AGENT-PROTOCOL.md](AGENT-PROTOCOL.md)**
 
 ---
 
