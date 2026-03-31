@@ -265,20 +265,6 @@ def check_update(url: str, stored_meta: dict) -> tuple[bool, dict]:
 # MAW Crawler
 # ============================================================================
 
-def ensure_output_dir(path: str) -> Path:
-    """
-    Ensure output directory exists.
-    
-    Args:
-        path: Directory path
-    
-    Returns:
-        Path object for the directory
-    """
-    dir_path = Path(path)
-    dir_path.mkdir(parents=True, exist_ok=True)
-    return dir_path
-
 
 def run_maw_crawl(name: str, source: dict, force: bool = False) -> bool:
     """
@@ -293,7 +279,8 @@ def run_maw_crawl(name: str, source: dict, force: bool = False) -> bool:
         True if crawl successful, False otherwise
     """
     url = source["url"]
-    output_dir = KNOWLEDGE_BASES_DIR / name
+    # MAW creates a .mv2 file, not a directory
+    output_path = KNOWLEDGE_BASES_DIR / f"{name}.mv2"
     depth = source.get("depth", DEFAULT_DEPTH)
     max_pages = source.get("max_pages", DEFAULT_MAX_PAGES)
     
@@ -311,14 +298,15 @@ def run_maw_crawl(name: str, source: dict, force: bool = False) -> bool:
             config["knowledge_bases"][name]["metadata"] = new_meta
             save_config(config)
     
-    # Ensure output directory exists
-    ensure_output_dir(str(output_dir))
+    # Ensure parent directory exists
+    KNOWLEDGE_BASES_DIR.mkdir(parents=True, exist_ok=True)
     
     # Build MAW command
     # Using official @memvid/maw package
+    # Note: MAW creates a .mv2 file (Mnemoria storage format)
     cmd = (
         f'npx @memvid/maw "{url}" '
-        f'--output "{output_dir}" '
+        f'--output "{output_path}" '
         f'--depth {depth} '
         f'--max-pages {max_pages} '
         f'--concurrency {DEFAULT_CONCURRENCY}'
@@ -326,15 +314,19 @@ def run_maw_crawl(name: str, source: dict, force: bool = False) -> bool:
     
     logger.info(f"Crawling: {url}")
     logger.debug(f"Command: {cmd}")
+    logger.debug(f"Output: {output_path}")
     
     try:
         # Run MAW crawl
+        # Use encoding='utf-8' for Windows compatibility with Unicode output
         result = subprocess.run(
             cmd,
             shell=True,  # Required for npx on Windows
             capture_output=True,
             text=True,
-            timeout=600  # 10 minute timeout
+            timeout=600,  # 10 minute timeout
+            encoding='utf-8',  # Force UTF-8 for Windows
+            errors='replace'  # Replace undecodable chars
         )
         
         # Log output
@@ -349,15 +341,22 @@ def run_maw_crawl(name: str, source: dict, force: bool = False) -> bool:
                 logger.error("Permission error. Try running as Administrator or check folder permissions.")
             return False
         
+        # Verify output file was created
+        if not output_path.exists():
+            logger.error(f"Output file not created: {output_path}")
+            return False
+        
         # Update config with crawl success
         config = load_config()
         config["knowledge_bases"][name]["last_crawled"] = datetime.now().isoformat()
         config["knowledge_bases"][name]["updated_at"] = datetime.now().isoformat()
         config["knowledge_bases"][name]["status"] = "ready"
+        config["knowledge_bases"][name]["output_path"] = str(output_path)
         save_config(config)
         
         logger.info(f"✓ Crawl complete for '{name}'")
-        logger.info(f"  Output: {output_dir}")
+        logger.info(f"  Output: {output_path}")
+        logger.info(f"  Size: {output_path.stat().st_size / 1024:.1f} KB")
         return True
         
     except subprocess.TimeoutExpired:
